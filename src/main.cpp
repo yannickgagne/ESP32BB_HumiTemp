@@ -39,7 +39,7 @@ void os_getDevEui (u1_t* buf) { memcpy_P(buf, DEVEUI, 8);}
 static const u1_t PROGMEM APPKEY[16] = TTN_APPKEY;
 void os_getDevKey (u1_t* buf) {  memcpy_P(buf, APPKEY, 16);}
 
-static uint8_t payload[12];
+static uint8_t payload[13];
 static osjob_t sendjob;
 
 // Schedule TX every this many seconds (might become longer due to duty
@@ -103,10 +103,12 @@ void getSensorsData() {
     delay(10);
   }
 
-  float fcurrent = (current * 1000) / 100;
+  Serial.print("current:"); Serial.println(current);
+
+  float fcurrent;
+  fcurrent = (float)current / 100;
   uint16_t pcurrent = LMIC_f2sflt16(fcurrent);
 
-  Serial.print("current:"); Serial.println(current);
   Serial.print("fcurrent:"); Serial.println(fcurrent);
   Serial.print("pcurrent:"); Serial.println(pcurrent);
 
