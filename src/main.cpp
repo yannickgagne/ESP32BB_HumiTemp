@@ -22,21 +22,29 @@
 #include <lmic.h>
 #include <hal/hal.h>
 #include <Preferences.h>
-
-void PrintRuntime();
-void LoraWANPrintLMICOpmode();
-void SaveLMICToNVS(int deepsleep_sec);
+#include <helpers.h>
 
 #define DEBUG
 #define LORA
 
+uint32_t Freq = 0;
+
 //LMIC
+static const u1_t PROGMEM APPEUI[8] = TTN_APPEUI;
+void os_getArtEui (u1_t* buf) { memcpy_P(buf, APPEUI, 8);}
+
+static const u1_t PROGMEM DEVEUI[8]= TTN_DEVEUI;
+void os_getDevEui (u1_t* buf) { memcpy_P(buf, DEVEUI, 8);}
+
+static const u1_t PROGMEM APPKEY[16] = TTN_APPKEY;
+void os_getDevKey (u1_t* buf) {  memcpy_P(buf, APPKEY, 16);}
+
 static uint8_t payload[12];
 static osjob_t sendjob;
 
 // Schedule TX every this many seconds (might become longer due to duty
 // cycle limitations).
-const unsigned TX_INTERVAL = 1*60;
+const unsigned TX_INTERVAL = 5*60;
 
 unsigned long stime;
 
@@ -95,10 +103,17 @@ void getSensorsData() {
     delay(10);
   }
 
+  float fcurrent = (current * 1000) / 100;
+  uint16_t pcurrent = LMIC_f2sflt16(fcurrent);
+
+  Serial.print("current:"); Serial.println(current);
+  Serial.print("fcurrent:"); Serial.println(fcurrent);
+  Serial.print("pcurrent:"); Serial.println(pcurrent);
+
   byte mvLow = lowByte(volts);
   byte mvHigh = highByte(volts);
-  byte maLow = lowByte(current);
-  byte maHigh = highByte(current);
+  byte maLow = lowByte(pcurrent);
+  byte maHigh = highByte(pcurrent);
   byte socLow = lowByte(soc);
   byte socHigh = highByte(soc);
 
@@ -117,6 +132,7 @@ void getSensorsData() {
   byte outLow = lowByte(outTemp);
   byte outHigh = highByte(outTemp);
 
+  
   //Store the values in lmic payload
   payload[0] = mvLow;
   payload[1] = mvHigh;
@@ -198,13 +214,6 @@ void onEvent (ev_t ev) {
                       printHex2(nwkKey[i]);
               }
               Serial.println();
-              // Save session info
-              Serial.println("Saving session data...");
-              prefs.putULong("netid", netid);
-              prefs.putUInt("devaddr", devaddr);
-              prefs.putBytes("nwkskey", nwkKey, 16);
-              prefs.putBytes("appskey", artKey, 16);
-              prefs.putBool("saved", true);
             }
 
             // Disable link check validation (automatically enabled
@@ -284,6 +293,30 @@ void onEvent (ev_t ev) {
     }
 }
 
+void SaveLMICToNVS(int deepsleep_sec)
+{
+    Serial.println(F("Save LMIC to NVS"));
+    NVS_LMIC = LMIC;
+
+    // ESP32 can't track millis during DeepSleep and no option to advanced millis after DeepSleep.
+    // Therefore reset DutyCyles
+
+    unsigned long now = millis();
+
+    Serial.println(F("Adjust globalDuty"));
+
+    NVS_LMIC.globalDutyAvail = NVS_LMIC.globalDutyAvail - ((now / 1000.0 + deepsleep_sec) * OSTICKS_PER_SEC);
+    if (NVS_LMIC.globalDutyAvail < 0)
+    {
+        NVS_LMIC.globalDutyAvail = 0;
+    }
+
+    prefs.putBytes("lmicst", &NVS_LMIC, sizeof(NVS_LMIC));
+    prefs.putBool("isSaved", true);
+    Serial.print("The size of \"lmicst\" is (in bytes): ");
+    Serial.println( prefs.getBytesLength("lmicst") );
+}
+
 void deepSleepRoutine() {
     Serial.print("Size of LMIC struct: ");Serial.print(sizeof(LMIC));Serial.println(" bytes");
     Serial.print("Elapsed time (ms): "); Serial.println(millis()-stime);
@@ -334,6 +367,11 @@ void setup() {
   }
 
   Serial.println("Setup started...");
+
+  setCpuFrequencyMhz(80);
+
+  Freq = getCpuFrequencyMhz();
+  Serial.print("CPU Freq (MHz): "); Serial.println(Freq);
 
   //Pin to clear preferences. LOW=KEEP, HIGH=ERASE
   pinMode(nvsKillPin, INPUT);
@@ -445,177 +483,12 @@ void loop() {
         Serial.print(timeCriticalJobs);
         Serial.print(" ");
 
-        LoraWANPrintLMICOpmode();
-        PrintRuntime();
+        //LoraWANPrintLMICOpmode();
+        //PrintRuntime();
         lastPrintTime = millis();
     }
   #else
     testSensors();
     delay(5000);
   #endif
-}
-
-//DEBUG STUFF
-void SaveLMICToNVS(int deepsleep_sec)
-{
-    Serial.println(F("Save LMIC to NVS"));
-    NVS_LMIC = LMIC;
-
-    // ESP32 can't track millis during DeepSleep and no option to advanced millis after DeepSleep.
-    // Therefore reset DutyCyles
-
-    unsigned long now = millis();
-
-    Serial.println(F("Adjust globalDuty"));
-
-    NVS_LMIC.globalDutyAvail = NVS_LMIC.globalDutyAvail - ((now / 1000.0 + deepsleep_sec) * OSTICKS_PER_SEC);
-    if (NVS_LMIC.globalDutyAvail < 0)
-    {
-        NVS_LMIC.globalDutyAvail = 0;
-    }
-
-    prefs.putBytes("lmicst", &NVS_LMIC, sizeof(NVS_LMIC));
-    prefs.putBool("isSaved", true);
-    Serial.print("The size of \"lmicst\" is (in bytes): ");
-    Serial.println( prefs.getBytesLength("lmicst") );
-}
-// opmode def
-// https://github.com/mcci-catena/arduino-lmic/blob/89c28c5888338f8fc851851bb64968f2a493462f/src/lmic/lmic.h#L233
-void LoraWANPrintLMICOpmode(void)
-{
-    Serial.print(F("LMIC.opmode: "));
-    if (LMIC.opmode & OP_NONE)
-    {
-        Serial.print(F("OP_NONE "));
-    }
-    if (LMIC.opmode & OP_SCAN)
-    {
-        Serial.print(F("OP_SCAN "));
-    }
-    if (LMIC.opmode & OP_TRACK)
-    {
-        Serial.print(F("OP_TRACK "));
-    }
-    if (LMIC.opmode & OP_JOINING)
-    {
-        Serial.print(F("OP_JOINING "));
-    }
-    if (LMIC.opmode & OP_TXDATA)
-    {
-        Serial.print(F("OP_TXDATA "));
-    }
-    if (LMIC.opmode & OP_POLL)
-    {
-        Serial.print(F("OP_POLL "));
-    }
-    if (LMIC.opmode & OP_REJOIN)
-    {
-        Serial.print(F("OP_REJOIN "));
-    }
-    if (LMIC.opmode & OP_SHUTDOWN)
-    {
-        Serial.print(F("OP_SHUTDOWN "));
-    }
-    if (LMIC.opmode & OP_TXRXPEND)
-    {
-        Serial.print(F("OP_TXRXPEND "));
-    }
-    if (LMIC.opmode & OP_RNDTX)
-    {
-        Serial.print(F("OP_RNDTX "));
-    }
-    if (LMIC.opmode & OP_PINGINI)
-    {
-        Serial.print(F("OP_PINGINI "));
-    }
-    if (LMIC.opmode & OP_PINGABLE)
-    {
-        Serial.print(F("OP_PINGABLE "));
-    }
-    if (LMIC.opmode & OP_NEXTCHNL)
-    {
-        Serial.print(F("OP_NEXTCHNL "));
-    }
-    if (LMIC.opmode & OP_LINKDEAD)
-    {
-        Serial.print(F("OP_LINKDEAD "));
-    }
-    if (LMIC.opmode & OP_LINKDEAD)
-    {
-        Serial.print(F("OP_LINKDEAD "));
-    }
-    if (LMIC.opmode & OP_TESTMODE)
-    {
-        Serial.print(F("OP_TESTMODE "));
-    }
-    if (LMIC.opmode & OP_UNJOIN)
-    {
-        Serial.print(F("OP_UNJOIN "));
-    }
-}
-
-void LoraWANDebug(lmic_t lmic_check)
-{
-    Serial.println("");
-    Serial.println("");
-
-    LoraWANPrintLMICOpmode();
-    Serial.println("");
-
-    Serial.print(F("LMIC.seqnoUp = "));
-    Serial.println(lmic_check.seqnoUp);
-
-    Serial.print(F("LMIC.globalDutyRate = "));
-    Serial.print(lmic_check.globalDutyRate);
-    Serial.print(F(" osTicks, "));
-    Serial.print(osticks2ms(lmic_check.globalDutyRate) / 1000);
-    Serial.println(F(" sec"));
-
-    Serial.print(F("LMIC.globalDutyAvail = "));
-    Serial.print(lmic_check.globalDutyAvail);
-    Serial.print(F(" osTicks, "));
-    Serial.print(osticks2ms(lmic_check.globalDutyAvail) / 1000);
-    Serial.println(F(" sec"));
-
-    Serial.print(F("LMICbandplan_nextTx = "));
-    Serial.print(LMICbandplan_nextTx(os_getTime()));
-    Serial.print(F(" osTicks, "));
-    Serial.print(osticks2ms(LMICbandplan_nextTx(os_getTime())) / 1000);
-    Serial.println(F(" sec"));
-
-    Serial.print(F("os_getTime = "));
-    Serial.print(os_getTime());
-    Serial.print(F(" osTicks, "));
-    Serial.print(osticks2ms(os_getTime()) / 1000);
-    Serial.println(F(" sec"));
-
-    Serial.print(F("LMIC.txend = "));
-    Serial.println(lmic_check.txend);
-    Serial.print(F("LMIC.txChnl = "));
-    Serial.println(lmic_check.txChnl);
-    /*
-    Serial.println(F("Band \tavail \t\tavail_sec\tlastchnl \ttxcap"));
-    for (u1_t bi = 0; bi < MAX_BANDS; bi++)
-    {
-        Serial.print(bi);
-        Serial.print("\t");
-        Serial.print(lmic_check.bands[bi].avail);
-        Serial.print("\t\t");
-        Serial.print(osticks2ms(lmic_check.bands[bi].avail) / 1000);
-        Serial.print("\t\t");
-        Serial.print(lmic_check.bands[bi].lastchnl);
-        Serial.print("\t\t");
-        Serial.println(lmic_check.bands[bi].txcap);
-    }
-    */
-    Serial.println("");
-    Serial.println("");
-}
-
-void PrintRuntime()
-{
-    long seconds = millis() / 1000;
-    Serial.print("Runtime: ");
-    Serial.print(seconds);
-    Serial.println(" seconds");
 }
