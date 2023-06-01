@@ -103,14 +103,9 @@ void getSensorsData() {
     delay(10);
   }
 
-  Serial.print("current:"); Serial.println(current);
-
   float fcurrent;
   fcurrent = (float)current / 100;
   uint16_t pcurrent = LMIC_f2sflt16(fcurrent);
-
-  Serial.print("fcurrent:"); Serial.println(fcurrent);
-  Serial.print("pcurrent:"); Serial.println(pcurrent);
 
   byte mvLow = lowByte(volts);
   byte mvHigh = highByte(volts);
@@ -315,20 +310,20 @@ void SaveLMICToNVS(int deepsleep_sec)
 
     prefs.putBytes("lmicst", &NVS_LMIC, sizeof(NVS_LMIC));
     prefs.putBool("isSaved", true);
-    Serial.print("The size of \"lmicst\" is (in bytes): ");
+    Serial.print(F("The size of 'lmicst' is (in bytes): "));
     Serial.println( prefs.getBytesLength("lmicst") );
 }
 
 void deepSleepRoutine() {
-    Serial.print("Size of LMIC struct: ");Serial.print(sizeof(LMIC));Serial.println(" bytes");
-    Serial.print("Elapsed time (ms): "); Serial.println(millis()-stime);
+    Serial.print(F("Size of LMIC struct: "));Serial.print(sizeof(LMIC));Serial.println(F(" bytes"));
+    Serial.print(F("Elapsed time (ms): ")); Serial.println(millis()-stime);
     Serial.flush();
     ADS.reset();
     Wire.end();
     digitalWrite(enablePin3v3, LOW);
     SaveLMICToNVS(TX_INTERVAL);
     LMIC_shutdown();
-    Serial.println("Going into Deep Sleep");
+    Serial.println(F("Good night"));
     esp_sleep_enable_timer_wakeup(TX_INTERVAL * 1000000);
     esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
     esp_deep_sleep_start();
@@ -337,7 +332,7 @@ void deepSleepRoutine() {
 void testSensors() {
   //ADS1x15
   int16_t raw = ADS.getValue();
-  Serial.print("ADC0: ");Serial.println(raw);
+  Serial.print(F("ADC0: "));Serial.println(raw);
 
   //BQ27441
   for(int i = 0; i < 6; i++) {
@@ -357,8 +352,8 @@ void testSensors() {
 
   //Temp sensors (x2)
   ts.requestTemperatures();
-  Serial.print("Sensor #1 (C): ");Serial.println(ts.getTempC(ts1));
-  Serial.print("Sensor #2 (C): ");Serial.println(ts.getTempC(ts2));
+  Serial.print(F("Sensor #1 (C): "));Serial.println(ts.getTempC(ts1));
+  Serial.print(F("Sensor #2 (C): "));Serial.println(ts.getTempC(ts2));
 }
  
 void setup() {
@@ -368,12 +363,12 @@ void setup() {
     ; //Wait for serial port to connect.
   }
 
-  Serial.println("Setup started...");
+  Serial.println(F("Setup started..."));
 
   setCpuFrequencyMhz(80);
 
   Freq = getCpuFrequencyMhz();
-  Serial.print("CPU Freq (MHz): "); Serial.println(Freq);
+  Serial.print(F("CPU Freq (MHz): ")); Serial.println(Freq);
 
   //Pin to clear preferences. LOW=KEEP, HIGH=ERASE
   pinMode(nvsKillPin, INPUT);
@@ -390,7 +385,7 @@ void setup() {
   pinMode(adsRdyPin, INPUT);
   ADS.begin();
   if(!ADS.isConnected()) {
-    Serial.println("ERROR: Cannot connect to ADS1x15!");
+    Serial.println(F("ERROR: Cannot connect to ADS1x15!"));
   } else {
     ADS.setGain(1); // 4.096 volt
     ADS.setDataRate(4); //1600 SPS for ADS1015
@@ -400,7 +395,7 @@ void setup() {
 
   //BQ27441
   if(!lipo.begin()) {
-    Serial.println("ERROR: Cannot connect to BQ27441!");
+    Serial.println(F("ERROR: Cannot connect to BQ27441!"));
   }
   lipo.setCapacity(BATTERY_CAPACITY);
   
@@ -420,7 +415,7 @@ void setup() {
     //Clear NVS if IO5 is HIGH
     if (digitalRead(nvsKillPin) == HIGH) {
       prefs.clear();
-      Serial.println("Cleared data from preferences.");
+      Serial.println(F("Cleared data from preferences."));
     }
 
     //Load saved session info if present
@@ -434,7 +429,7 @@ void setup() {
         }
         Serial.println("");
         */
-        Serial.println("Printing lmicst bytes...");
+        Serial.println(F("Printing lmicst bytes..."));
         unsigned char saved[720];
         prefs.getBytes("lmicst", saved, prefs.getBytesLength("lmicst"));
         for (int i = 0; i < sizeof(saved); i++) {
@@ -443,27 +438,25 @@ void setup() {
         Serial.println("");
 
         memcpy(&NVS_LMIC, saved, sizeof(saved));
-        Serial.println("Restored LMIC from Preferences.");
+        Serial.println(F("Restored LMIC from Preferences."));
     }
 
     if (NVS_LMIC.seqnoUp != 0)
     {
         LMIC = NVS_LMIC;
-        Serial.println("Using LMIC from NVS.");
+        Serial.println(F("Using LMIC from NVS."));
     }
 
     LMIC_selectSubBand(1); //from Adafruit sample
     //LMIC_setDrTxpow(DR_SF7, 14);
     // Start job (sending automatically starts OTAA too)
     do_send(&sendjob);
-
-    Serial.print("DEVADDR: "); Serial.println(LMIC.devaddr, HEX);
   #else
-    Serial.println("WARNING: LoRaWAN Deactivated");
+    Serial.println(F("WARNING: LoRaWAN Deactivated"));
   #endif
 
   #ifdef DEBUG
-    Serial.println("INFO: Setup done.");
+    Serial.println(F("INFO: Setup done."));
   #endif
 }
 
@@ -477,7 +470,7 @@ void loop() {
     const bool timeCriticalJobs = os_queryTimeCriticalJobs(ms2osticksRound((TX_INTERVAL * 1000)));
     if (!timeCriticalJobs && GOTO_DEEPSLEEP == true && !(LMIC.opmode & OP_TXRXPEND))
     {
-      Serial.println("We can deep sleep");
+      Serial.println(F("We can deep sleep"));
       deepSleepRoutine();
     } else if (lastPrintTime + 2000 < millis()) {
         Serial.print(F("Cannot sleep "));
