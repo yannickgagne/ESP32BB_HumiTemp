@@ -137,7 +137,7 @@ void LoraWANDebug(lmic_t lmic_check)
 void PrintRuntime()
 {
     long seconds = millis() / 1000;
-    Serial.print("Runtime: ");
+    Serial.print(F("Runtime: "));
     Serial.print(seconds);
-    Serial.println(" seconds");
+    Serial.println(F(" seconds"));
 }
